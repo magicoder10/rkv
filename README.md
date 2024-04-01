@@ -1,1 +1,3 @@
-# Log structured key-value Database with BTree index
+# Log structured key-value Database
+[x] B Tree indexing
+[x] Log compaction
