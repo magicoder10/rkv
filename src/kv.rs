@@ -8,6 +8,7 @@ use serde_json::Deserializer;
 use crate::cmd::Command;
 use crate::err::KvError;
 use crate::err::Result;
+use crate::KvsEngine;
 use crate::stream::{BufReaderWithPos, BufWriterWithPos};
 
 const COMPACTION_THRESHOLD: u64 = 1024 * 1024;
@@ -29,78 +30,6 @@ pub struct KvStore {
 }
 
 impl KvStore {
-    pub fn set(&mut self, key: String, value: String) -> Result<()> {
-        let cmd = Command::set(key.clone(), value);
-        let log_start_pos = self.writer.pos;
-        serde_json::to_writer(&mut self.writer, &cmd)?;
-        self.writer.flush()?;
-
-        let log_end_pos = self.writer.pos;
-        let size = log_end_pos - log_start_pos;
-        let val = self.index.insert(key.clone(), CommandPosition {
-            log_start_pos,
-            size,
-            gen: self.current_gen,
-        }.into());
-        if let Some(val) = val {
-            self.stale_data_size += val.size;
-        }
-
-        if self.stale_data_size >= COMPACTION_THRESHOLD {
-            self.compact_log()?;
-        }
-
-        Ok(())
-    }
-
-    pub fn get(&mut self, key: String) -> Result<Option<String>> {
-        match self.index.get(&key) {
-            Some(cmd_pos) => {
-                let reader = self.readers
-                    .get_mut(&cmd_pos.gen)
-                    .ok_or(KvError::KeyNotFound)?;
-                reader.seek(SeekFrom::Start(cmd_pos.log_start_pos))?;
-                let cmd_reader = reader.take(cmd_pos.size);
-                match serde_json::from_reader(cmd_reader)? {
-                    Command::Set { value, .. } => {
-                        return Ok(Some(value));
-                    }
-                    _ => {
-                        Err(KvError::UnexpectedCommandType)
-                    }
-                }
-            }
-            None => Ok(None)
-        }
-    }
-
-    pub fn remove(&mut self, key: String) -> Result<()> {
-        if self.index.contains_key(&key) {
-            let cmd = Command::remove(key.clone());
-            let log_start_pos = self.writer.pos;
-            serde_json::to_writer(&mut self.writer, &cmd)?;
-            self.writer.flush()?;
-
-            let log_end_pos = self.writer.pos;
-
-            let val = self.index.remove(&key);
-            if let Some(old_cmd) = val {
-                self.stale_data_size += old_cmd.size;
-            }
-
-            let remove_cmd_size = log_end_pos - log_start_pos;
-            self.stale_data_size += remove_cmd_size;
-
-            if self.stale_data_size >= COMPACTION_THRESHOLD {
-                self.compact_log()?;
-            }
-
-            Ok(())
-        } else {
-            Err(KvError::KeyNotFound)
-        }
-    }
-
     pub fn open(dir: impl Into<PathBuf>) -> Result<KvStore> {
         let dir = dir.into();
         fs::create_dir_all(&dir)?;
@@ -173,6 +102,80 @@ impl KvStore {
 
         self.stale_data_size = 0;
         Ok(())
+    }
+}
+
+impl KvsEngine for KvStore {
+    fn set(&mut self, key: String, value: String) -> Result<()> {
+        let cmd = Command::set(key.clone(), value);
+        let log_start_pos = self.writer.pos;
+        serde_json::to_writer(&mut self.writer, &cmd)?;
+        self.writer.flush()?;
+
+        let log_end_pos = self.writer.pos;
+        let size = log_end_pos - log_start_pos;
+        let val = self.index.insert(key.clone(), CommandPosition {
+            log_start_pos,
+            size,
+            gen: self.current_gen,
+        }.into());
+        if let Some(val) = val {
+            self.stale_data_size += val.size;
+        }
+
+        if self.stale_data_size >= COMPACTION_THRESHOLD {
+            self.compact_log()?;
+        }
+
+        Ok(())
+    }
+
+    fn get(&mut self, key: String) -> Result<Option<String>> {
+        match self.index.get(&key) {
+            Some(cmd_pos) => {
+                let reader = self.readers
+                    .get_mut(&cmd_pos.gen)
+                    .ok_or(KvError::KeyNotFound)?;
+                reader.seek(SeekFrom::Start(cmd_pos.log_start_pos))?;
+                let cmd_reader = reader.take(cmd_pos.size);
+                match serde_json::from_reader(cmd_reader)? {
+                    Command::Set { value, .. } => {
+                        return Ok(Some(value));
+                    }
+                    _ => {
+                        Err(KvError::UnexpectedCommandType)
+                    }
+                }
+            }
+            None => Ok(None)
+        }
+    }
+
+    fn remove(&mut self, key: String) -> Result<()> {
+        if self.index.contains_key(&key) {
+            let cmd = Command::remove(key.clone());
+            let log_start_pos = self.writer.pos;
+            serde_json::to_writer(&mut self.writer, &cmd)?;
+            self.writer.flush()?;
+
+            let log_end_pos = self.writer.pos;
+
+            let val = self.index.remove(&key);
+            if let Some(old_cmd) = val {
+                self.stale_data_size += old_cmd.size;
+            }
+
+            let remove_cmd_size = log_end_pos - log_start_pos;
+            self.stale_data_size += remove_cmd_size;
+
+            if self.stale_data_size >= COMPACTION_THRESHOLD {
+                self.compact_log()?;
+            }
+
+            Ok(())
+        } else {
+            Err(KvError::KeyNotFound)
+        }
     }
 }
 
