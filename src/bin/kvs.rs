@@ -1,5 +1,5 @@
 use clap::{arg, command, Command};
-use kvs::{KvError, KvStore};
+use kvs::{KvError, KvsEngine, KvStore};
 use std::env;
 use std::env::current_dir;
 use std::process::exit;
@@ -7,7 +7,7 @@ use std::string::String;
 
 fn main() -> kvs::Result<()> {
     let matches = command!()
-        .name(env!("CARGO_PKG_NAME"))
+        .name(env!("CARGO_BIN_NAME"))
         .author(env!("CARGO_PKG_AUTHORS"))
         .about(env!("CARGO_PKG_DESCRIPTION"))
         .subcommand(Command::new("get").arg(arg!([key]).required(true)))

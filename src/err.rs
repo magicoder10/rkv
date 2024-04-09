@@ -1,30 +1,41 @@
 use std::{io, result};
-use failure::Fail;
+use std::str::Utf8Error;
+use thiserror::Error;
+use crate::net::MsgError;
 
-#[derive(Fail, Debug)]
+#[derive(Error, Debug)]
 pub enum KvError {
-    #[fail(display = "{}", _0)]
-    Io(#[cause] io::Error),
+    #[error("{0}")]
+    Io(#[from] io::Error),
 
-    #[fail(display = "{}", _0)]
-    Serde(#[cause] serde_json::Error),
+    #[error("{0}")]
+    SerdeJson(#[from] serde_json::Error),
 
-    #[fail(display = "Unexpected command type")]
+    #[error("{0}")]
+    SerdeBinary(#[from] bincode::Error),
+
+    #[error("{0}")]
+    Sled(#[from] sled::Error),
+
+    #[error("{0}")]
+    Encode(#[from] Utf8Error),
+
+    #[error("Unexpected command type")]
     UnexpectedCommandType,
 
-    #[fail(display = "Key not found")]
+    #[error("Key not found")]
     KeyNotFound,
+
+    #[error("Unknown")]
+    Unknown,
 }
 
-impl From<io::Error> for KvError {
-    fn from(error: io::Error) -> Self {
-        KvError::Io(error)
-    }
-}
-
-impl From<serde_json::Error> for KvError {
-    fn from(error: serde_json::Error) -> Self {
-        KvError::Serde(error)
+impl From<MsgError> for KvError {
+    fn from(value: MsgError) -> Self {
+        match value {
+            MsgError::Io(e) => KvError::Io(e),
+            MsgError::SerdeBinary(e) => KvError::SerdeBinary(e),
+        }
     }
 }
 
