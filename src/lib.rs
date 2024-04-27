@@ -2,7 +2,7 @@ extern crate core;
 
 pub use kv::KvStore;
 pub use err::{Result, KvError};
-pub use engine::{KvsEngine};
+pub use engine::{KvsEngine, Sled};
 pub use kv_server::{KvServer};
 pub use kv_client::{KvClient};
 
